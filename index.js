@@ -16,7 +16,7 @@ const express = require("express");
 // ===== WEB SERVER =====
 const app = express();
 app.get("/", (req, res) => res.send("Bot alive"));
-app.listen(3000);
+app.listen(3000, "localhost");
 
 // ===== DISCORD CLIENT =====
 const client = new Client({
