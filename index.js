@@ -1,4 +1,4 @@
-// ================== IMPORT ==================
+// ================= IMPORT =================
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -14,13 +14,18 @@ const {
   getVoiceConnection,
 } = require("@discordjs/voice");
 
-// ================== CONFIG ==================
-const TOKEN = "PUT_YOUR_BOT_TOKEN_HERE";
-const GUILD_ID = "PUT_GUILD_ID";
-const VOICE_CHANNEL_ID = "PUT_VOICE_CHANNEL_ID";
+// ================= ENV =================
+const TOKEN = process.env.DISCORD_TOKEN;
+const GUILD_ID = process.env.GUILD_ID;
+const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 const PORT = process.env.PORT || 3000;
 
-// ================== STATE ==================
+if (!TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
+  console.error("❌ Missing environment variables");
+  process.exit(1);
+}
+
+// ================= STATE =================
 let connection;
 let player;
 let isConnected = false;
@@ -28,27 +33,30 @@ let nowPlaying = null;
 let volume = 0.6;
 let pulse = 0;
 
-// ================== DISCORD ==================
+// ================= DISCORD =================
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
 client.once("ready", () => {
-  console.log("🤖 Bot logged in");
+  console.log("🤖 Logged in as", client.user.tag);
 });
 
 client.login(TOKEN);
 
-// ================== MUSIC ==================
-function getRandomTrack() {
+// ================= MUSIC =================
+function randomTrack() {
   const dir = path.join(__dirname, "music");
+  if (!fs.existsSync(dir)) return null;
+
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".mp3"));
   if (!files.length) return null;
+
   return path.join(dir, files[Math.floor(Math.random() * files.length)]);
 }
 
-function playRandom() {
-  const track = getRandomTrack();
+function playNext() {
+  const track = randomTrack();
   if (!track) return;
 
   nowPlaying = path.basename(track);
@@ -60,18 +68,19 @@ function playRandom() {
 
   resource.volume.setVolume(volume);
   player.play(resource);
-
-  console.log("🎶 Playing:", nowPlaying);
 }
 
-// ================== JOIN ==================
+// ================= VOICE =================
 function joinVC() {
   if (isConnected) return;
+
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return;
 
   connection = joinVoiceChannel({
     channelId: VOICE_CHANNEL_ID,
     guildId: GUILD_ID,
-    adapterCreator: client.guilds.cache.get(GUILD_ID).voiceAdapterCreator,
+    adapterCreator: guild.voiceAdapterCreator,
   });
 
   player = createAudioPlayer({
@@ -83,12 +92,10 @@ function joinVC() {
   connection.subscribe(player);
   isConnected = true;
 
-  playRandom();
-
-  player.on(AudioPlayerStatus.Idle, playRandom);
+  playNext();
+  player.on(AudioPlayerStatus.Idle, playNext);
 }
 
-// ================== LEAVE ==================
 function leaveVC() {
   const conn = getVoiceConnection(GUILD_ID);
   if (conn) conn.destroy();
@@ -96,14 +103,14 @@ function leaveVC() {
   nowPlaying = null;
 }
 
-// ================== EXPRESS ==================
+// ================= EXPRESS =================
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
 
-app.get("/", (_, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
-});
+app.get("/", (_, res) =>
+  res.sendFile(path.join(__dirname, "public/index.html")),
+);
 
 app.get("/join", (_, res) => {
   joinVC();
@@ -133,4 +140,4 @@ app.get("/status", (_, res) => {
   });
 });
 
-app.listen(PORT, () => console.log("🌐 Web running on", PORT));
+app.listen(PORT, () => console.log("🌐 Dashboard running on port", PORT));
