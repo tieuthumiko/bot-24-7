@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bot Dashboard</title>
+
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        font-family: system-ui;
+        overflow: hidden;
+      }
+
+      video {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        z-index: -2;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        backdrop-filter: blur(14px);
+        background: rgba(0, 0, 0, 0.4);
+        z-index: -1;
+      }
+
+      .card {
+        width: 90%;
+        max-width: 360px;
+        margin: auto;
+        margin-top: 10vh;
+        padding: 20px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        text-align: center;
+      }
+
+      .pulse {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        margin: 14px auto;
+        background: #00ffcc;
+        transform: scale(1);
+        transition: transform 0.15s linear;
+      }
+
+      button {
+        width: 100%;
+        padding: 12px;
+        margin-top: 10px;
+        border-radius: 14px;
+        border: none;
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        font-size: 15px;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <video autoplay muted loop>
+      <source src="bg.mp4" type="video/mp4" />
+    </video>
+    <div class="overlay"></div>
+
+    <div class="card">
+      <h2>🎧 Music Bot</h2>
+
+      <div class="pulse" id="pulse"></div>
+
+      <div id="status">Offline</div>
+      <div id="track">---</div>
+
+      <button onclick="fetch('/join')">Join</button>
+      <button onclick="fetch('/disconnect')">Disconnect</button>
+
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value="0.6"
+        oninput="setVolume(this.value)"
+      />
+    </div>
+
+    <script>
+      async function setVolume(v) {
+        await fetch("/volume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ volume: v }),
+        });
+      }
+
+      async function update() {
+        const r = await fetch("/status");
+        const d = await r.json();
+
+        document.getElementById("status").innerText = d.connected
+          ? "🟢 Online"
+          : "🔴 Offline";
+
+        document.getElementById("track").innerText = d.track || "---";
+
+        document.getElementById("pulse").style.transform =
+          `scale(${1 + d.pulse})`;
+      }
+
+      setInterval(update, 400);
+      update();
+    </script>
+  </body>
+</html>
