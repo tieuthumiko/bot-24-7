@@ -1,58 +1,85 @@
-// ================= IMPORT =================
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
 
 const { Client, GatewayIntentBits } = require("discord.js");
-
 const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
   AudioPlayerStatus,
   NoSubscriberBehavior,
+  StreamType,
   getVoiceConnection,
 } = require("@discordjs/voice");
 
-// ================= ENV =================
+const prism = require("prism-media");
+const ffmpeg = require("ffmpeg-static");
+
+// ===== ENV =====
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
 const PORT = process.env.PORT || 3000;
 
 if (!TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
-  console.error("❌ Missing environment variables");
+  console.error("❌ Missing ENV");
   process.exit(1);
 }
 
-// ================= STATE =================
-let connection;
-let player;
-let isConnected = false;
-let nowPlaying = null;
-let volume = 0.6;
-let pulse = 0;
-
-// ================= DISCORD =================
+// ===== DISCORD =====
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
-client.once("ready", () => {
-  console.log("🤖 Logged in as", client.user.tag);
-});
-
 client.login(TOKEN);
+client.once("ready", () => console.log("🤖 Bot online"));
 
-// ================= MUSIC =================
+// ===== STATE =====
+let player;
+let isConnected = false;
+let nowPlaying = null;
+let volume = 0.6;
+
+// ===== MUSIC =====
 function randomTrack() {
   const dir = path.join(__dirname, "music");
-  if (!fs.existsSync(dir)) return null;
-
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".mp3"));
   if (!files.length) return null;
-
   return path.join(dir, files[Math.floor(Math.random() * files.length)]);
+}
+
+function createResource(file) {
+  const ffmpegProcess = new prism.FFmpeg({
+    args: [
+      "-analyzeduration",
+      "0",
+      "-loglevel",
+      "0",
+      "-i",
+      file,
+      "-f",
+      "s16le",
+      "-ar",
+      "48000",
+      "-ac",
+      "2",
+    ],
+    executable: ffmpeg,
+  });
+
+  const opus = new prism.opus.Encoder({
+    rate: 48000,
+    channels: 2,
+    frameSize: 960,
+  });
+
+  const stream = ffmpegProcess.pipe(opus);
+
+  return createAudioResource(stream, {
+    inputType: StreamType.Opus,
+    inlineVolume: true,
+  });
 }
 
 function playNext() {
@@ -60,36 +87,30 @@ function playNext() {
   if (!track) return;
 
   nowPlaying = path.basename(track);
-  pulse = Math.random();
-
-  const resource = createAudioResource(track, {
-    inlineVolume: true,
-  });
-
+  const resource = createResource(track);
   resource.volume.setVolume(volume);
   player.play(resource);
+  console.log("🎵 Playing", nowPlaying);
 }
 
-// ================= VOICE =================
+// ===== VOICE =====
 function joinVC() {
   if (isConnected) return;
 
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return;
 
-  connection = joinVoiceChannel({
-    channelId: VOICE_CHANNEL_ID,
+  const conn = joinVoiceChannel({
     guildId: GUILD_ID,
+    channelId: VOICE_CHANNEL_ID,
     adapterCreator: guild.voiceAdapterCreator,
   });
 
   player = createAudioPlayer({
-    behaviors: {
-      noSubscriber: NoSubscriberBehavior.Play,
-    },
+    behaviors: { noSubscriber: NoSubscriberBehavior.Play },
   });
 
-  connection.subscribe(player);
+  conn.subscribe(player);
   isConnected = true;
 
   playNext();
@@ -103,41 +124,34 @@ function leaveVC() {
   nowPlaying = null;
 }
 
-// ================= EXPRESS =================
+// ===== WEB =====
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
 
-app.get("/", (_, res) =>
-  res.sendFile(path.join(__dirname, "public/index.html")),
-);
-
 app.get("/join", (_, res) => {
   joinVC();
-  res.send("joined");
+  res.send("ok");
 });
 
 app.get("/disconnect", (_, res) => {
   leaveVC();
-  res.send("disconnected");
+  res.send("ok");
 });
 
 app.post("/volume", (req, res) => {
   volume = Math.max(0, Math.min(1, req.body.volume));
-  if (player?.state?.resource?.volume) {
+  if (player?.state?.resource?.volume)
     player.state.resource.volume.setVolume(volume);
-  }
   res.json({ volume });
 });
 
 app.get("/status", (_, res) => {
-  pulse = isConnected ? Math.random() * volume : 0;
   res.json({
     connected: isConnected,
     track: nowPlaying,
     volume,
-    pulse,
   });
 });
 
-app.listen(PORT, () => console.log("🌐 Dashboard running on port", PORT));
+app.listen(PORT, () => console.log("🌐 Web running"));
